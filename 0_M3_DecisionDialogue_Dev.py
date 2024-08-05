@@ -1,6 +1,9 @@
 import random
 import json
+import csv  # New import for Lesson 3
+from datetime import datetime  # New import for Lesson 3
 
+# Existing GameConfig class (unchanged)
 class GameConfig:
     def __init__(self):
         self.load_game_config()
@@ -14,7 +17,7 @@ class GameConfig:
         self.time_of_day = random.choice(config['time_options'])
         self.location = random.choice(config['location_options'])
 
-    
+# Existing DecisionTree class (unchanged)
 class DecisionTree:
     def __init__(self):
         self.tree = {
@@ -32,6 +35,7 @@ class DecisionTree:
             decision = decision['player_has_item'][player_has_item]
         return decision
 
+# Modified NPC class
 class NPC:
     def __init__(self, name):
         self.name = name
@@ -56,12 +60,64 @@ class NPC:
             'ignore': f"{self.name} ignores you."
         }
         
-        return responses[decision]
+        return decision, responses[decision]  # Modified to return both decision and response
 
+# New class for Lesson 3
+class DataCollector:
+    def __init__(self):
+        self.data = []
+
+    def collect_data(self, player_action, npc_decision, npc_response, game_state):
+        """
+        Collect data from each player-NPC interaction.
+        """
+        interaction_data = {
+            'timestamp': datetime.now().isoformat(),
+            'player_action': player_action,
+            'npc_decision': npc_decision,
+            'npc_response': npc_response,
+            'player_health': game_state.player_health,
+            'player_friendly': game_state.player_friendly,
+            'player_has_item': game_state.player_has_item,
+            'time_of_day': game_state.time_of_day,
+            'location': game_state.location
+        }
+        self.data.append(interaction_data)
+
+    def save_data(self, filename='game_data.csv'):
+        """
+        Save collected data to a CSV file.
+        """
+        if not self.data:
+            print("No data to save.")
+            return
+
+        with open(filename, 'w', newline='') as csvfile:
+            fieldnames = self.data[0].keys()
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in self.data:
+                writer.writerow(row)
+        print(f"Data saved to {filename}")
+
+    def load_data(self, filename='game_data.csv'):
+        """
+        Load data from a CSV file.
+        """
+        try:
+            with open(filename, 'r') as csvfile:
+                reader = csv.DictReader(csvfile)
+                self.data = list(reader)
+            print(f"Data loaded from {filename}")
+        except FileNotFoundError:
+            print(f"File {filename} not found. No data loaded.")
+
+# Modified Game class
 class Game:
     def __init__(self):
         self.config = GameConfig()
         self.npc = NPC("Guardian")
+        self.data_collector = DataCollector()  # New for Lesson 3
 
     def start(self):
         print("Welcome to 'Decisions n Dialogue'!")
@@ -71,13 +127,18 @@ class Game:
         while True:
             action = input("What would you like to do? (talk/leave): ").lower()
             if action == 'talk':
-                response = self.npc.interact(action, self.config.player_has_item)
-                print(response)
+                npc_decision, npc_response = self.npc.interact(action, self.config.player_has_item)
+                print(npc_response)
+                # New for Lesson 3: Collect data after each interaction
+                self.data_collector.collect_data(action, npc_decision, npc_response, self.config)
             elif action == 'leave':
                 print("You decide to leave. Game over.")
                 break
             else:
                 print("Invalid action. Please choose 'talk' or 'leave'.")
+
+        # New for Lesson 3: Save collected data at the end of the game
+        self.data_collector.save_data()
 
 if __name__ == "__main__":
     game = Game()
