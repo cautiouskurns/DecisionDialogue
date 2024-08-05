@@ -20,7 +20,7 @@ class GameConfig:
         self.time_of_day = random.choice(config['time_options'])
         self.location = random.choice(config['location_options'])
 
-# Modified DecisionTree class (now using sklearn)
+# Existing DecisionTree class (unchanged)
 class DecisionTree:
     def __init__(self):
         self.clf = DecisionTreeClassifier(random_state=42)
@@ -29,29 +29,57 @@ class DecisionTree:
         self.trained = False
 
     def train(self, X, y):
-        # Encode categorical variables
         X_encoded = np.array([self.label_encoder.fit_transform(x) for x in X.T]).T
         y_encoded = self.label_encoder.fit_transform(y)
-        
-        # Train the decision tree
         self.clf.fit(X_encoded, y_encoded)
         self.trained = True
 
     def make_decision(self, npc_friendly, npc_has_item, player_has_item, time_of_day, location):
         if not self.trained:
-            # Fallback to the original simple decision tree if not trained
             if npc_friendly:
                 return 'talk' if npc_has_item else 'give_item'
             else:
                 return 'trade' if player_has_item else 'ignore'
         
-        # Prepare the input for prediction
         X = np.array([[npc_friendly, npc_has_item, player_has_item, time_of_day, location]])
         X_encoded = np.array([self.label_encoder.transform(x) for x in X.T]).T
-        
-        # Make prediction
         decision_encoded = self.clf.predict(X_encoded)[0]
         return self.label_encoder.inverse_transform([decision_encoded])[0]
+
+# New class for Lesson 5: NPC Response Templates
+class NPCResponseTemplates:
+    def __init__(self):
+        self.load_templates()
+
+    def load_templates(self):
+        # Load response templates from a JSON file
+        with open('npc_response_templates.json', 'r') as f:
+            self.templates = json.load(f)
+
+    def get_response(self, action, context):
+        """
+        Get a context-aware response based on the NPC's action and game context.
+        
+        :param action: The NPC's decided action
+        :param context: A dictionary containing relevant game state information
+        :return: A string containing the NPC's response
+        """
+        if action not in self.templates:
+            return f"The NPC performs the action: {action}"
+
+        possible_responses = self.templates[action]
+        
+        # Filter responses based on context
+        filtered_responses = [
+            response for response in possible_responses
+            if all(context.get(key) == value for key, value in response.get('conditions', {}).items())
+        ]
+
+        if filtered_responses:
+            chosen_response = random.choice(filtered_responses)
+            return chosen_response['text'].format(**context)
+        else:
+            return random.choice(possible_responses)['text'].format(**context)
 
 # Modified NPC class
 class NPC:
@@ -59,6 +87,7 @@ class NPC:
         self.name = name
         self.load_npc_config()
         self.decision_tree = DecisionTree()
+        self.response_templates = NPCResponseTemplates()  # New for Lesson 5
 
     def load_npc_config(self):
         with open('npc_config_test.json', 'r') as f:
@@ -71,14 +100,18 @@ class NPC:
     def interact(self, player_action, player_has_item, time_of_day, location):
         decision = self.decision_tree.make_decision(self.friendly, self.has_item, player_has_item, time_of_day, location)
         
-        responses = {
-            'talk': f"{self.name} engages in friendly conversation.",
-            'give_item': f"{self.name} offers you an item.",
-            'trade': f"{self.name} proposes a trade.",
-            'ignore': f"{self.name} ignores you."
+        # Create context for response generation (New for Lesson 5)
+        context = {
+            'npc_name': self.name,
+            'npc_mood': self.mood,
+            'player_has_item': player_has_item,
+            'time_of_day': time_of_day,
+            'location': location
         }
         
-        return decision, responses[decision]
+        response = self.response_templates.get_response(decision, context)
+        
+        return decision, response
 
     def update_decision_tree(self, X, y):
         self.decision_tree.train(X, y)
@@ -125,7 +158,6 @@ class DataCollector:
         except FileNotFoundError:
             print(f"File {filename} not found. No data loaded.")
 
-    # New method for Lesson 4
     def prepare_training_data(self):
         X = []
         y = []
@@ -156,7 +188,12 @@ class Game:
             action = input("What would you like to do? (talk/leave): ").lower()
             if action == 'talk':
                 npc_decision, npc_response = self.npc.interact(action, self.config.player_has_item, self.config.time_of_day, self.config.location)
-                print(npc_response)
+                
+                # Display more detailed NPC response (New for Lesson 5)
+                print(f"\n{self.npc.name}'s Response:")
+                print(f"Action: {npc_decision}")
+                print(f"Response: {npc_response}\n")
+                
                 self.data_collector.collect_data(action, npc_decision, npc_response, self.config)
                 
                 # Update NPC's decision tree every 10 turns
