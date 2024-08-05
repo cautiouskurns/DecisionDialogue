@@ -14,10 +14,29 @@ class GameConfig:
         self.time_of_day = random.choice(config['time_options'])
         self.location = random.choice(config['location_options'])
 
+    
+class DecisionTree:
+    def __init__(self):
+        self.tree = {
+            'friendly': {
+                True: {'has_item': {True: 'talk', False: 'give_item'}},
+                False: {'player_has_item': {True: 'trade', False: 'ignore'}}
+            }
+        }
+
+    def make_decision(self, npc_friendly, npc_has_item, player_has_item):
+        decision = self.tree['friendly'][npc_friendly]
+        if npc_friendly:
+            decision = decision['has_item'][npc_has_item]
+        else:
+            decision = decision['player_has_item'][player_has_item]
+        return decision
+
 class NPC:
     def __init__(self, name):
         self.name = name
         self.load_npc_config()
+        self.decision_tree = DecisionTree()
 
     def load_npc_config(self):
         with open('npc_config_test.json', 'r') as f:
@@ -27,16 +46,17 @@ class NPC:
         self.has_item = random.choice(config['has_item_options'])
         self.mood = random.choice(config['mood_options'])
 
-    def interact(self, player_action):
-        # For now, just return a random response
-        responses = [
-            f"{self.name} looks at you curiously.",
-            f"{self.name} nods slowly.",
-            f"{self.name} seems unsure how to respond.",
-            f"{self.name} smiles warmly.",
-            f"{self.name} frowns slightly."
-        ]
-        return random.choice(responses)
+    def interact(self, player_action, player_has_item):
+        decision = self.decision_tree.make_decision(self.friendly, self.has_item, player_has_item)
+        
+        responses = {
+            'talk': f"{self.name} engages in friendly conversation.",
+            'give_item': f"{self.name} offers you an item.",
+            'trade': f"{self.name} proposes a trade.",
+            'ignore': f"{self.name} ignores you."
+        }
+        
+        return responses[decision]
 
 class Game:
     def __init__(self):
@@ -51,7 +71,7 @@ class Game:
         while True:
             action = input("What would you like to do? (talk/leave): ").lower()
             if action == 'talk':
-                response = self.npc.interact(action)
+                response = self.npc.interact(action, self.config.player_has_item)
                 print(response)
             elif action == 'leave':
                 print("You decide to leave. Game over.")
