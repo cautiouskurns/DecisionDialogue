@@ -117,22 +117,50 @@ class NPCDecisionTree:
         action = self.clf.predict([features])[0]
         return action
 
-    def update_metrics(self):
+    def update_decision_tree(self):
+        new_X = []
+        new_y = []
+        for interaction in self.interaction_history[-10:]:  # Consider last 10 interactions
+            context = interaction['context']
+            new_X.append([
+                int(context[0]),  # player_friendly
+                int(context[1]),  # player_has_item
+                int(context[2]),  # health
+                ['happy', 'neutral', 'angry'].index(context[3]),  # mood
+                ['morning', 'afternoon', 'evening', 'night'].index(context[4]),  # time_of_day
+                ['forest', 'village', 'castle', 'cave'].index(context[5])  # location
+            ])
+            new_y.append(interaction['npc_action'])
+
+        # Add new data to existing training data
+        self.training_data.X = np.vstack([self.training_data.X, new_X])
+        self.training_data.y = np.hstack([self.training_data.y, new_y])
+
+        # Retrain the classifier
+        self.clf = self.train_decision_tree()
+
+        # Calculate and store performance metrics
         y_pred = self.clf.predict(self.training_data.X)
         accuracy = np.mean(y_pred == self.training_data.y)
         self.accuracy_history.append(accuracy)
         self.tree_depth_history.append(self.clf.get_depth())
 
+    def get_action_distribution(self):
+        # Calculate the distribution of NPC actions
+        action_counts = np.bincount(self.training_data.y, minlength=6)
+        action_names = ['Attack', 'Talk', 'Flee', 'Give Item', 'Trade', 'Ignore']
+        return dict(zip(action_names, action_counts / len(self.training_data.y)))
+
 class NPCVisualizer:
     def __init__(self, decision_tree):
         self.decision_tree = decision_tree
 
-    def visualize_decision_tree(self):
+    def visualize_decision_tree(self, width=800, height=600):
         tree = self.decision_tree.clf.tree_
-        feature_names = ['Player Friendly', 'Player Has Item', 'Morning/Night', 'Afternoon/Evening', 'Forest/Village']
-        class_names = self.decision_tree.clf.classes_
+        feature_names = ['Player Friendly', 'Player Has Item', 'NPC Health', 'NPC Mood', 'Time of Day', 'Location']
+        class_names = ['Attack', 'Talk', 'Flee', 'Give Item', 'Trade', 'Ignore']
 
-        def tree_to_graph(node, x, y, dx, dy):
+        def tree_to_plotly(node, x, y, dx, dy):
             if tree.feature[node] != -2:  # not a leaf node
                 threshold = tree.threshold[node]
                 feature = feature_names[tree.feature[node]]
@@ -149,8 +177,8 @@ class NPCVisualizer:
                 edges.append(go.Scatter(x=[x, x-dx, x, x+dx], y=[y, y-dy, y, y-dy], mode='lines',
                                         line=dict(color=COLOR_SCHEME['secondary']), hoverinfo='none', name=''))
 
-                tree_to_graph(left_child, x-dx, y-dy, dx/2, dy)
-                tree_to_graph(right_child, x+dx, y-dy, dx/2, dy)
+                tree_to_plotly(left_child, x-dx, y-dy, dx/2, dy)
+                tree_to_plotly(right_child, x+dx, y-dy, dx/2, dy)
             else:  # leaf node
                 value = tree.value[node]
                 class_idx = np.argmax(value)
@@ -161,16 +189,18 @@ class NPCVisualizer:
                                         hoverinfo='text', name=''))
 
         nodes, edges = [], []
-        tree_to_graph(0, 0, 1, 0.5, 0.1)
+        tree_to_plotly(0, 0, 1, 0.5, 0.1)
 
         layout = go.Layout(
-            title=dict(text="NPC's Decision Tree", font=dict(size=24, color=COLOR_SCHEME['text'])),
-            hovermode='closest',
+            title=dict(text=f"NPC's Decision Tree", font=dict(size=24, color=COLOR_SCHEME['text'])),
+            hovermode='closest', showlegend=False,
             xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
             yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
             paper_bgcolor=COLOR_SCHEME['background'],
             plot_bgcolor=COLOR_SCHEME['background'],
-            font=dict(color=COLOR_SCHEME['text'])
+            font=dict(family="Arial, sans-serif", size=14, color=COLOR_SCHEME['text']),
+            width=width,
+            height=height
         )
 
         fig = go.Figure(data=edges + nodes, layout=layout)
@@ -180,22 +210,41 @@ class NPCVisualizer:
         fig = make_subplots(rows=2, cols=1, subplot_titles=("Model Accuracy Over Time", "Decision Tree Depth Over Time"))
 
         fig.add_trace(go.Scatter(y=self.decision_tree.accuracy_history, mode='lines+markers', name='Accuracy',
-                                 line=dict(color=COLOR_SCHEME['primary'])),
-                      row=1, col=1)
+                                 line=dict(color=COLOR_SCHEME['primary'])), row=1, col=1)
         fig.add_trace(go.Scatter(y=self.decision_tree.tree_depth_history, mode='lines+markers', name='Tree Depth',
-                                 line=dict(color=COLOR_SCHEME['secondary'])),
-                      row=2, col=1)
+                                 line=dict(color=COLOR_SCHEME['secondary'])), row=2, col=1)
 
         fig.update_layout(
             height=600, width=800,
-            title_text="NPC Performance Metrics",
+            title=dict(text="NPC Performance Metrics", font=dict(size=24, color=COLOR_SCHEME['text'])),
             paper_bgcolor=COLOR_SCHEME['background'],
             plot_bgcolor=COLOR_SCHEME['background'],
-            font=dict(color=COLOR_SCHEME['text'])
+            font=dict(family="Arial, sans-serif", size=14, color=COLOR_SCHEME['text'])
         )
         fig.update_xaxes(title_text="Update Iterations", row=2, col=1, gridcolor='lightgrey')
         fig.update_yaxes(title_text="Accuracy", row=1, col=1, gridcolor='lightgrey')
         fig.update_yaxes(title_text="Tree Depth", row=2, col=1, gridcolor='lightgrey')
+
+        return fig
+
+    def plot_feature_importance(self):
+        feature_importance = self.decision_tree.clf.feature_importances_
+        feature_names = ['Player Friendly', 'Player Has Item', 'NPC Health', 'NPC Mood', 'Time of Day', 'Location']
+        
+        fig = px.bar(x=feature_importance, y=feature_names, orientation='h',
+                     labels={'x': 'Importance', 'y': 'Feature'},
+                     color=feature_importance, color_continuous_scale=px.colors.sequential.Viridis)
+        
+        fig.update_layout(
+            height=600, width=800,
+            title=dict(text="Feature Importance in NPC Decision Making", font=dict(size=24, color=COLOR_SCHEME['text'])),
+            paper_bgcolor=COLOR_SCHEME['background'],
+            plot_bgcolor=COLOR_SCHEME['background'],
+            font=dict(family="Arial, sans-serif", size=14, color=COLOR_SCHEME['text']),
+            yaxis={'categoryorder': 'total ascending'}
+        )
+        fig.update_xaxes(gridcolor='lightgrey')
+        fig.update_yaxes(gridcolor='lightgrey')
 
         return fig
 
@@ -239,13 +288,19 @@ class NPC:
             return "ignore"
 
     def update_decision_tree(self):
-        self.decision_tree.update_metrics()
+        self.decision_tree.update_decision_tree()
+
+    def get_action_distribution(self):
+        return self.decision_tree.get_action_distribution()
 
     def visualize_decision_tree(self, width=800, height=600):
         return self.visualizer.visualize_decision_tree(width, height)
 
     def plot_performance_metrics(self):
         return self.visualizer.plot_performance_metrics()
+
+    def plot_feature_importance(self):
+        return self.visualizer.plot_feature_importance()
 
 class GameInterface:
     def __init__(self, game):
@@ -495,7 +550,7 @@ class GameInterface:
         if action_text in actions:
             self.log(actions[action_text]['message'], 'player')
             for effect in actions[action_text]['effects']:
-                setattr(self, effect['attribute'], effect['value'])
+                setattr(self.game.config, effect['attribute'], effect['value'])
         else:
             self.log(f"Unknown action: {action_text}", 'system')
 
@@ -503,6 +558,7 @@ class GameInterface:
 
     def on_quit(self, b):
         self.log("Thanks for playing!")
+        self.game.running = False
 
     def log(self, message, message_type='system'):
         if message_type == 'player':
@@ -524,7 +580,7 @@ class GameInterface:
             <div style="width: 200px; margin-right: 20px;">
                 <div style="font-size: 14px;">Player Health</div>
                 <div style="background-color: #ddd; border-radius: 10px; overflow: hidden;">
-                    <div style="width: {self.player_health}%; height: 20px; background-color: #4CAF50; border-radius: 10px;"></div>
+                    <div style="width: {self.game.config.player_health}%; height: 20px; background-color: #4CAF50; border-radius: 10px;"></div>
                 </div>
             </div>
             <div style="margin-right: 20px;">Time of Day: {self.game.config.time_of_day}</div>
@@ -582,9 +638,8 @@ class GameInterface:
             def reset_npc_animation():
                 self.npc_animating = False
                 self.image_box.value = self.create_image_box()
-            
-            import threading
-            threading.Timer(0.3, reset_npc_animation).start()
+                import threading
+                threading.Timer(0.3, reset_npc_animation).start()
 
 class GameLogic:
     def __init__(self, game):
@@ -611,15 +666,50 @@ class GameLogic:
         if self.game.config.turn_count % self.game.config.npc_evolution_turns == 0:
             self.game.npc.update_decision_tree()
             self.game.interface.log("The NPC's behavior has evolved!")
+            self.game.visualization.show_npc_evolution()
         if self.game.config.turn_count % self.game.config.environment_change_turns == 0:
             self.game.config.time_of_day = random.choice(self.game.config.time_options)
             self.game.config.location = random.choice(self.game.config.location_options)
             self.game.interface.log(f"You've moved to the {self.game.config.location} and time has passed. It's now {self.game.config.time_of_day}.")
         if self.game.config.player_health <= 0:
             self.game.interface.log("Game Over! You have been defeated.")
+            self.game.running = False
         if self.game.npc.health <= 0:
             self.game.interface.log(f"{self.game.npc.name} has been defeated!")
+            self.game.running = False
         self.game.interface.update_status()
+
+class GameVisualization:
+    def __init__(self, game):
+        self.game = game
+        self.viz_output = widgets.Output(layout=Layout(width='100%', height='500px', border=f'1px solid {self.game.config.COLOR_SCHEME["text"]}'))
+
+    def show_npc_evolution(self):
+        action_dist = self.game.npc.get_action_distribution()
+        evolution_message = "NPC Behavior Change:\n"
+        for action, prob in action_dist.items():
+            evolution_message += f"{action}: {prob:.2f}\n"
+        self.game.interface.log(evolution_message, 'system')
+        
+        # Visualize the evolution
+        self.visualize_npc_evolution()
+
+    def visualize_npc_evolution(self, width=800, height=600):
+        with self.viz_output:
+            clear_output(wait=True)
+            action_dist = self.game.npc.get_action_distribution()
+            fig = go.Figure(data=[go.Bar(x=list(action_dist.keys()), y=list(action_dist.values()))])
+            fig.update_layout(
+                title="NPC Action Distribution",
+                xaxis_title="Actions",
+                yaxis_title="Probability",
+                paper_bgcolor=self.game.config.COLOR_SCHEME['background'],
+                plot_bgcolor=self.game.config.COLOR_SCHEME['background'],
+                font=dict(color=self.game.config.COLOR_SCHEME['text']),
+                width=width,
+                height=height
+            )
+            fig.show()
 
 class Game:
     def __init__(self):
@@ -627,10 +717,17 @@ class Game:
         self.npc = NPC("Guardian")
         self.interface = GameInterface(self)
         self.logic = GameLogic(self)
+        self.visualization = GameVisualization(self)
+        self.running = True
 
     def start(self):
         self.interface.log("Welcome to 'Decisions n Dialogue'! You encounter the Guardian in the forest.")
 
+    def run(self):
+        self.start()
+        while self.running:
+            pass  # The game now runs based on button clicks in the interface
+
 if __name__ == "__main__":
     game = Game()
-    game.start()
+    game.run()
