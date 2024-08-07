@@ -41,7 +41,7 @@ class NPCResponseTemplates:
         self.load_response_templates()
 
     def load_response_templates(self):
-        with open('responses_templates.json', 'r') as f:
+        with open('npc_responses.json', 'r') as f:
             self.response_templates = json.load(f)
 
     def get_response(self, response_type, player_action, npc_name):
@@ -173,7 +173,8 @@ class NPC:
 
     def interact(self, player_friendly, player_has_item, time_of_day, location, player_action):
         action = self.decision_tree.decide_action(player_friendly, player_has_item, time_of_day, location)
-        response = self.response_templates.get_response(action, player_action, self.name)
+        response_type = self.get_response_type(action, player_action)
+        response = self.response_templates.get_response(response_type, player_action, self.name)
         
         self.interaction_history.append({
             'player_action': player_action,
@@ -188,6 +189,12 @@ class NPC:
     def get_response_type(self, npc_action, player_action):
         if npc_action == 'talk':
             return "greet" if player_action == "Approach Friendly" else "talk"
+        elif npc_action == 'give_item':
+            return "offer_item"
+        elif npc_action == 'trade':
+            return "propose_trade"
+        elif npc_action == 'ignore':
+            return "ignore"
         return npc_action
 
     def visualize_decision_tree(self):
