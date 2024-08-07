@@ -307,8 +307,7 @@ class GameInterface:
         self.game = game
         self.player_animating = False
         self.npc_animating = False
-        self.player_health = 100
-        self.game_log = []
+        self.game_log = []  # Initialize the game_log attribute
         self.setup_interface()
 
     def setup_interface(self):
@@ -528,7 +527,7 @@ class GameInterface:
             {self.bg_image}
             <div class="character-box">
                 <img src="data:image/png;base64,{self.encoded_player_image}" alt="Player" class="{player_class}" style="left: 10px;" />
-                <div class="health-bar" id="player-health">Player Health: {self.player_health}</div>
+                <div class="health-bar" id="player-health">Player Health: {self.game.config.player_health}</div>
             </div>
             <div class="character-box">
                 <img src="data:image/png;base64,{self.encoded_npc_image}" alt="NPC" class="{npc_class}" style="right: 10px;" />
@@ -538,6 +537,9 @@ class GameInterface:
         """
 
     def on_action(self, action):
+        if not self.game.running:
+            return  # Don't process actions if the game is not running
+
         if isinstance(action, str):
             action_text = action
         else:
@@ -556,9 +558,19 @@ class GameInterface:
 
         self.game.logic.interact(action_text)
 
+        # Check if the game should end after each action
+        if not self.game.running:
+            self.disable_action_buttons()
+
     def on_quit(self, b):
         self.log("Thanks for playing!")
         self.game.running = False
+        self.disable_action_buttons()
+
+    def disable_action_buttons(self):
+        for button in self.action_buttons:
+            button.disabled = True
+        self.quit_button.disabled = True
 
     def log(self, message, message_type='system'):
         if message_type == 'player':
@@ -715,18 +727,18 @@ class Game:
     def __init__(self):
         self.config = GameConfig()
         self.npc = NPC("Guardian")
-        self.interface = GameInterface(self)
         self.logic = GameLogic(self)
         self.visualization = GameVisualization(self)
         self.running = True
+        self.game_log = []  # Initialize game_log here
+        self.interface = GameInterface(self)
 
     def start(self):
         self.interface.log("Welcome to 'Decisions n Dialogue'! You encounter the Guardian in the forest.")
 
     def run(self):
         self.start()
-        while self.running:
-            pass  # The game now runs based on button clicks in the interface
+       
 
 if __name__ == "__main__":
     game = Game()
