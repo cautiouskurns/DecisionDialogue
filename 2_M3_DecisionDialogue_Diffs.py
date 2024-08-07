@@ -1,11 +1,21 @@
 import random
 from sklearn.tree import DecisionTreeClassifier
 import numpy as np
-from ipywidgets import widgets, Layout, VBox, HBox
+from ipywidgets import widgets, Layout, VBox, HBox, HTML, GridspecLayout
 from IPython.display import display, clear_output
 import json
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+
+# Define a color scheme
+COLOR_SCHEME = {
+    'background': '#2b2b2b',
+    'text': '#FFFFFF',
+    'primary': '#3498DB',
+    'secondary': '#E74C3C',
+    'accent': '#2ECC71',
+    'hover': '#9b9b9b',
+}
 
 class GameConfig:
     def __init__(self):
@@ -14,6 +24,7 @@ class GameConfig:
         self.player_has_item = False
         self.time_of_day = random.choice(["morning", "afternoon", "evening", "night"])
         self.location = random.choice(["forest", "village", "castle", "cave"])
+        self.turn_count = 0
 
 class NPCTrainingData:
     def __init__(self):
@@ -91,13 +102,13 @@ class NPCVisualizer:
 
                 # Node
                 nodes.append(go.Scatter(x=[x], y=[y], mode='markers+text', 
-                                        marker=dict(size=30, color='lightblue'),
+                                        marker=dict(size=30, color=COLOR_SCHEME['primary']),
                                         text=[f"{feature}<br>{threshold:.2f}"], textposition='middle center',
                                         hoverinfo='text', name=''))
 
                 # Edges
                 edges.append(go.Scatter(x=[x, x-dx, x, x+dx], y=[y, y-dy, y, y-dy], mode='lines',
-                                        line=dict(color='gray'), hoverinfo='none', name=''))
+                                        line=dict(color=COLOR_SCHEME['secondary']), hoverinfo='none', name=''))
 
                 tree_to_graph(left_child, x-dx, y-dy, dx/2, dy)
                 tree_to_graph(right_child, x+dx, y-dy, dx/2, dy)
@@ -106,7 +117,7 @@ class NPCVisualizer:
                 class_idx = np.argmax(value)
                 class_name = class_names[class_idx]
                 nodes.append(go.Scatter(x=[x], y=[y], mode='markers+text',
-                                        marker=dict(size=25, color='lightgreen'),
+                                        marker=dict(size=25, color=COLOR_SCHEME['accent']),
                                         text=[class_name], textposition='middle center',
                                         hoverinfo='text', name=''))
 
@@ -114,10 +125,13 @@ class NPCVisualizer:
         tree_to_graph(0, 0, 1, 0.5, 0.1)
 
         layout = go.Layout(
-            title="NPC's Decision Tree",
+            title=dict(text="NPC's Decision Tree", font=dict(size=24, color=COLOR_SCHEME['text'])),
             hovermode='closest',
             xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
             yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            paper_bgcolor=COLOR_SCHEME['background'],
+            plot_bgcolor=COLOR_SCHEME['background'],
+            font=dict(color=COLOR_SCHEME['text'])
         )
 
         fig = go.Figure(data=edges + nodes, layout=layout)
@@ -126,15 +140,23 @@ class NPCVisualizer:
     def plot_performance_metrics(self):
         fig = make_subplots(rows=2, cols=1, subplot_titles=("Model Accuracy Over Time", "Decision Tree Depth Over Time"))
 
-        fig.add_trace(go.Scatter(y=self.decision_tree.accuracy_history, mode='lines+markers', name='Accuracy'),
+        fig.add_trace(go.Scatter(y=self.decision_tree.accuracy_history, mode='lines+markers', name='Accuracy',
+                                 line=dict(color=COLOR_SCHEME['primary'])),
                       row=1, col=1)
-        fig.add_trace(go.Scatter(y=self.decision_tree.tree_depth_history, mode='lines+markers', name='Tree Depth'),
+        fig.add_trace(go.Scatter(y=self.decision_tree.tree_depth_history, mode='lines+markers', name='Tree Depth',
+                                 line=dict(color=COLOR_SCHEME['secondary'])),
                       row=2, col=1)
 
-        fig.update_layout(height=600, width=800, title_text="NPC Performance Metrics")
-        fig.update_xaxes(title_text="Update Iterations", row=2, col=1)
-        fig.update_yaxes(title_text="Accuracy", row=1, col=1)
-        fig.update_yaxes(title_text="Tree Depth", row=2, col=1)
+        fig.update_layout(
+            height=600, width=800,
+            title_text="NPC Performance Metrics",
+            paper_bgcolor=COLOR_SCHEME['background'],
+            plot_bgcolor=COLOR_SCHEME['background'],
+            font=dict(color=COLOR_SCHEME['text'])
+        )
+        fig.update_xaxes(title_text="Update Iterations", row=2, col=1, gridcolor='lightgrey')
+        fig.update_yaxes(title_text="Accuracy", row=1, col=1, gridcolor='lightgrey')
+        fig.update_yaxes(title_text="Tree Depth", row=2, col=1, gridcolor='lightgrey')
 
         return fig
 
@@ -180,32 +202,42 @@ class GameInterface:
         self.setup_interface()
 
     def setup_interface(self):
-        self.output = widgets.HTML()
+        self.title = HTML(value=f"<h1 style='color: {COLOR_SCHEME['text']}; text-align: center;'>Decisions n Dialogue</h1>")
+        
+        self.status_display = HTML()
+        self.game_log = HTML()
+        self.update_status_display()
+        
         self.action_buttons = [
-            widgets.Button(description="Talk"),
-            widgets.Button(description="Leave")
+            widgets.Button(description="Talk", style=dict(button_color=COLOR_SCHEME['primary'])),
+            widgets.Button(description="Leave", style=dict(button_color=COLOR_SCHEME['secondary']))
         ]
         self.viz_buttons = [
-            widgets.Button(description="Show Decision Tree"),
-            widgets.Button(description="Show Performance Metrics")
+            widgets.Button(description="Show Decision Tree", style=dict(button_color=COLOR_SCHEME['accent'])),
+            widgets.Button(description="Show Performance Metrics", style=dict(button_color=COLOR_SCHEME['accent']))
         ]
         for button in self.action_buttons + self.viz_buttons:
+            button.layout.width = '200px'
+            button.layout.height = '40px'
             button.on_click(self.on_button_clicked)
         
+        button_box = HBox(self.action_buttons + self.viz_buttons, layout=Layout(justify_content='space-around'))
+        
         self.layout = VBox([
-            widgets.HTML("<h1>Decisions n Dialogue</h1>"),
-            self.output,
-            HBox(self.action_buttons),
-            HBox(self.viz_buttons)
-        ])
+            self.title,
+            self.status_display,
+            self.game_log,
+            button_box
+        ], layout=Layout(width='800px', align_items='center'))
+        
         display(self.layout)
 
     def on_button_clicked(self, button):
         if button.description == "Talk":
             response = self.game.logic.interact("talk")
-            self.update_display(response)
+            self.update_game_log(response, 'npc')
         elif button.description == "Leave":
-            self.update_display("You decide to leave. Game over.")
+            self.update_game_log("You decide to leave. Game over.", 'system')
             self.game.running = False
         elif button.description == "Show Decision Tree":
             fig = self.game.npc.visualize_decision_tree()
@@ -213,9 +245,26 @@ class GameInterface:
         elif button.description == "Show Performance Metrics":
             fig = self.game.npc.plot_performance_metrics()
             fig.show()
+        
+        self.game.config.turn_count += 1
+        self.update_status_display()
 
-    def update_display(self, message):
-        self.output.value += f"<p>{message}</p>"
+    def update_status_display(self):
+        status_html = f"""
+        <div style="background-color: {COLOR_SCHEME['background']}; color: {COLOR_SCHEME['text']}; padding: 10px; border-radius: 5px;">
+            <h3>Game Status:</h3>
+            <p>Turn: {self.game.config.turn_count}</p>
+            <p>Player Health: {self.game.config.player_health}</p>
+            <p>NPC Health: {self.game.npc.health}</p>
+            <p>Time of Day: {self.game.config.time_of_day}</p>
+            <p>Location: {self.game.config.location}</p>
+        </div>
+        """
+        self.status_display.value = status_html
+
+    def update_game_log(self, message, speaker):
+        color = COLOR_SCHEME['primary'] if speaker == 'npc' else COLOR_SCHEME['text']
+        self.game_log.value += f"<p style='color: {color};'><strong>{speaker.capitalize()}:</strong> {message}</p>"
 
 class GameLogic:
     def __init__(self, game):
@@ -241,9 +290,13 @@ class Game:
         self.running = True
 
     def start(self):
-        self.interface.update_display("Welcome to 'Decisions n Dialogue'!")
-        self.interface.update_display(f"You find yourself in the {self.config.location}. It's currently {self.config.time_of_day}.")
-        self.interface.update_display(f"You encounter {self.npc.name}.")
+        welcome_message = (
+            "Welcome to 'Decisions n Dialogue'! "
+            f"You find yourself in the {self.config.location}. "
+            f"It's currently {self.config.time_of_day}. "
+            f"You encounter {self.npc.name}."
+        )
+        self.interface.update_game_log(welcome_message, 'system')
 
     def run(self):
         self.start()
