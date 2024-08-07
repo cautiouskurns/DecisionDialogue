@@ -3,6 +3,7 @@ from sklearn.tree import DecisionTreeClassifier
 import numpy as np
 from ipywidgets import widgets, Layout, VBox, HBox
 from IPython.display import display, clear_output
+import json
 
 class GameConfig:
     def __init__(self):
@@ -41,6 +42,26 @@ class NPCDecisionTree:
             1 if location in ['forest', 'village'] else 0
         ]
         return self.clf.predict([features])[0]
+    
+class NPCResponseTemplates:
+    def __init__(self):
+        self.load_response_templates()
+
+    def load_response_templates(self):
+        with open('responses_templates.json', 'r') as f:
+            self.response_templates = json.load(f)
+
+    def get_response(self, response_type, player_action, npc_name):
+        templates = self.response_templates.get(response_type, [])
+        if not templates:
+            return f"{npc_name} doesn't know how to respond."
+        
+        chosen_template = random.choice(templates)
+        response = chosen_template.format(
+            player_action=player_action,
+            npc_name=npc_name
+        )
+        return response
 
 class NPC:
     def __init__(self, name):
@@ -49,18 +70,25 @@ class NPC:
         self.friendly = random.choice([True, False])
         self.training_data = NPCTrainingData()
         self.decision_tree = NPCDecisionTree(self.training_data)
+        self.response_templates = NPCResponseTemplates()
+        self.interaction_history = []
 
-    def interact(self, player_friendly, player_has_item, time_of_day, location):
+    def interact(self, player_friendly, player_has_item, time_of_day, location, player_action):
         action = self.decision_tree.decide_action(player_friendly, player_has_item, time_of_day, location)
+        response = self.response_templates.get_response(action, player_action, self.name)
         
-        responses = {
-            'talk': f"{self.name} engages in friendly conversation.",
-            'give_item': f"{self.name} offers you an item.",
-            'trade': f"{self.name} proposes a trade.",
-            'ignore': f"{self.name} ignores you."
-        }
+        self.interaction_history.append({
+            'player_action': player_action,
+            'npc_action': action,
+            'context': [player_friendly, player_has_item, time_of_day, location]
+        })
         
-        return responses[action]
+        return response
+
+    def get_response_type(self, npc_action, player_action):
+        if npc_action == 'talk':
+            return "greet" if player_action == "Approach Friendly" else "talk"
+        return npc_action
 
 class GameInterface:
     def __init__(self, game):
@@ -104,7 +132,8 @@ class GameLogic:
                 self.game.config.player_friendly,
                 self.game.config.player_has_item,
                 self.game.config.time_of_day,
-                self.game.config.location
+                self.game.config.location,
+                action
             )
         return "Invalid action"
 
@@ -113,8 +142,8 @@ class Game:
         self.config = GameConfig()
         self.npc = NPC("Guardian")
         self.logic = GameLogic(self)
-        self.running = True
         self.interface = GameInterface(self)
+        self.running = True
 
     def start(self):
         self.interface.update_display("Welcome to 'Decisions n Dialogue'!")
